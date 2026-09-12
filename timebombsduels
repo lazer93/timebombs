@@ -1,0 +1,853 @@
+--// FOVMB SPIN CONTROL
+--// LocalScript -> StarterPlayer > StarterPlayerScripts
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+--==================================================
+-- SETTINGS
+--==================================================
+
+local Settings = {
+	AirSpin = false,
+	AirSpinSpeed = 8,
+
+	ProximitySpin = false,
+	ProximityDistance = 12,
+	ProximitySpinSpeed = 7,
+
+	Wallhop = false,
+	WallhopPower = 45,
+
+	Chams = false,
+	Health = false,
+
+	GuiColor = Color3.fromRGB(120, 70, 255),
+}
+
+--==================================================
+-- CHARACTER
+--==================================================
+
+local Character
+local Humanoid
+local RootPart
+
+local function SetupCharacter(char)
+	Character = char
+	Humanoid = char:WaitForChild("Humanoid")
+	RootPart = char:WaitForChild("HumanoidRootPart")
+end
+
+if LocalPlayer.Character then
+	SetupCharacter(LocalPlayer.Character)
+end
+
+LocalPlayer.CharacterAdded:Connect(SetupCharacter)
+
+--==================================================
+-- GUI
+--==================================================
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "FOVMB_Control"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.Parent = PlayerGui
+
+--==================================================
+-- NOTIFICATION
+--==================================================
+
+local Notification = Instance.new("Frame")
+Notification.Name = "Notification"
+Notification.Size = UDim2.new(0, 285, 0, 65)
+Notification.Position = UDim2.new(1, 310, 1, -85)
+Notification.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+Notification.BorderSizePixel = 0
+Notification.Parent = ScreenGui
+
+local NotificationCorner = Instance.new("UICorner")
+NotificationCorner.CornerRadius = UDim.new(0, 12)
+NotificationCorner.Parent = Notification
+
+local NotificationStroke = Instance.new("UIStroke")
+NotificationStroke.Thickness = 2
+NotificationStroke.Color = Settings.GuiColor
+NotificationStroke.Parent = Notification
+
+local NotificationTitle = Instance.new("TextLabel")
+NotificationTitle.Size = UDim2.new(1, -20, 0, 28)
+NotificationTitle.Position = UDim2.new(0, 10, 0, 7)
+NotificationTitle.BackgroundTransparency = 1
+NotificationTitle.Text = "FOVMB"
+NotificationTitle.TextColor3 = Color3.new(1, 1, 1)
+NotificationTitle.Font = Enum.Font.GothamBold
+NotificationTitle.TextSize = 17
+NotificationTitle.TextXAlignment = Enum.TextXAlignment.Left
+NotificationTitle.Parent = Notification
+
+local NotificationText = Instance.new("TextLabel")
+NotificationText.Size = UDim2.new(1, -20, 0, 22)
+NotificationText.Position = UDim2.new(0, 10, 0, 34)
+NotificationText.BackgroundTransparency = 1
+NotificationText.Text = "Made by fovmb on Discord"
+NotificationText.TextColor3 = Color3.fromRGB(185, 185, 195)
+NotificationText.Font = Enum.Font.Gotham
+NotificationText.TextSize = 13
+NotificationText.TextXAlignment = Enum.TextXAlignment.Left
+NotificationText.Parent = Notification
+
+-- Show notification
+task.spawn(function()
+	task.wait(0.5)
+
+	local showTween = TweenService:Create(
+		Notification,
+		TweenInfo.new(
+			0.55,
+			Enum.EasingStyle.Quint,
+			Enum.EasingDirection.Out
+		),
+		{
+			Position = UDim2.new(1, -20, 1, -85)
+		}
+	)
+
+	showTween:Play()
+	showTween.Completed:Wait()
+
+	task.wait(3)
+
+	local hideTween = TweenService:Create(
+		Notification,
+		TweenInfo.new(
+			0.45,
+			Enum.EasingStyle.Quint,
+			Enum.EasingDirection.In
+		),
+		{
+			Position = UDim2.new(1, 310, 1, -85)
+		}
+	)
+
+	hideTween:Play()
+end)
+
+--==================================================
+-- MAIN GUI
+--==================================================
+
+local Main = Instance.new("Frame")
+Main.Name = "Main"
+Main.Size = UDim2.new(0, 340, 0, 465)
+Main.Position = UDim2.new(0.5, -170, 0.5, -232)
+Main.BackgroundColor3 = Color3.fromRGB(18, 18, 23)
+Main.BorderSizePixel = 0
+Main.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 14)
+MainCorner.Parent = Main
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = Settings.GuiColor
+MainStroke.Thickness = 2
+MainStroke.Parent = Main
+
+--==================================================
+-- HEADER
+--==================================================
+
+local Header = Instance.new("Frame")
+Header.Size = UDim2.new(1, 0, 0, 58)
+Header.BackgroundColor3 = Settings.GuiColor
+Header.BorderSizePixel = 0
+Header.Parent = Main
+
+local HeaderCorner = Instance.new("UICorner")
+HeaderCorner.CornerRadius = UDim.new(0, 14)
+HeaderCorner.Parent = Header
+
+local HeaderCover = Instance.new("Frame")
+HeaderCover.Size = UDim2.new(1, 0, 0, 15)
+HeaderCover.Position = UDim2.new(0, 0, 1, -15)
+HeaderCover.BackgroundColor3 = Settings.GuiColor
+HeaderCover.BorderSizePixel = 0
+HeaderCover.Parent = Header
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -65, 1, 0)
+Title.Position = UDim2.new(0, 16, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "FOVMB â€¢ SPIN CONTROL"
+Title.TextColor3 = Color3.new(1, 1, 1)
+Title.TextSize = 19
+Title.Font = Enum.Font.GothamBold
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = Header
+
+local CloseButton = Instance.new("TextButton")
+CloseButton.Size = UDim2.new(0, 40, 0, 40)
+CloseButton.Position = UDim2.new(1, -48, 0, 9)
+CloseButton.BackgroundColor3 = Color3.fromRGB(235, 65, 65)
+CloseButton.Text = "Ã—"
+CloseButton.TextColor3 = Color3.new(1, 1, 1)
+CloseButton.TextSize = 25
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.BorderSizePixel = 0
+CloseButton.Parent = Header
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 9)
+CloseCorner.Parent = CloseButton
+
+--==================================================
+-- OPEN BUTTON
+--==================================================
+
+local OpenButton = Instance.new("TextButton")
+OpenButton.Size = UDim2.new(0, 50, 0, 50)
+OpenButton.Position = UDim2.new(0, 12, 0, 12)
+OpenButton.BackgroundColor3 = Settings.GuiColor
+OpenButton.Text = "â˜°"
+OpenButton.TextColor3 = Color3.new(1, 1, 1)
+OpenButton.TextSize = 23
+OpenButton.Font = Enum.Font.GothamBold
+OpenButton.BorderSizePixel = 0
+OpenButton.Visible = false
+OpenButton.Parent = ScreenGui
+
+local OpenCorner = Instance.new("UICorner")
+OpenCorner.CornerRadius = UDim.new(0, 11)
+OpenCorner.Parent = OpenButton
+
+--==================================================
+-- DRAGGING
+--==================================================
+
+local dragging = false
+local dragStart
+local startPosition
+
+Header.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch then
+
+		dragging = true
+		dragStart = input.Position
+		startPosition = Main.Position
+	end
+end)
+
+Header.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch then
+
+		dragging = false
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if not dragging then
+		return
+	end
+
+	if input.UserInputType == Enum.UserInputType.MouseMovement
+		or input.UserInputType == Enum.UserInputType.Touch then
+
+		local delta = input.Position - dragStart
+
+		Main.Position = UDim2.new(
+			startPosition.X.Scale,
+			startPosition.X.Offset + delta.X,
+			startPosition.Y.Scale,
+			startPosition.Y.Offset + delta.Y
+		)
+	end
+end)
+
+--==================================================
+-- SCROLLING
+--==================================================
+
+local Scrolling = Instance.new("ScrollingFrame")
+Scrolling.Size = UDim2.new(1, -20, 1, -70)
+Scrolling.Position = UDim2.new(0, 10, 0, 63)
+Scrolling.BackgroundTransparency = 1
+Scrolling.BorderSizePixel = 0
+Scrolling.ScrollBarThickness = 4
+Scrolling.ScrollBarImageColor3 = Settings.GuiColor
+Scrolling.CanvasSize = UDim2.new(0, 0, 0, 850)
+Scrolling.Parent = Main
+
+local Layout = Instance.new("UIListLayout")
+Layout.Padding = UDim.new(0, 8)
+Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+Layout.Parent = Scrolling
+
+--==================================================
+-- HELPERS
+--==================================================
+
+local function CreateLabel(text)
+	local label = Instance.new("TextLabel")
+
+	label.Size = UDim2.new(1, -10, 0, 28)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextColor3 = Color3.fromRGB(190, 190, 200)
+	label.TextSize = 13
+	label.Font = Enum.Font.GothamBold
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = Scrolling
+
+	return label
+end
+
+local function CreateButton(text)
+	local button = Instance.new("TextButton")
+
+	button.Size = UDim2.new(1, -10, 0, 44)
+	button.BackgroundColor3 = Color3.fromRGB(32, 32, 40)
+	button.Text = text
+	button.TextColor3 = Color3.new(1, 1, 1)
+	button.TextSize = 14
+	button.Font = Enum.Font.GothamSemibold
+	button.BorderSizePixel = 0
+	button.Parent = Scrolling
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 9)
+	corner.Parent = button
+
+	return button
+end
+
+--==================================================
+-- AIR SPIN
+--==================================================
+
+CreateLabel("AIR SPIN")
+
+local AirSpinButton = CreateButton("Air Spin: OFF")
+
+AirSpinButton.MouseButton1Click:Connect(function()
+	Settings.AirSpin = not Settings.AirSpin
+
+	AirSpinButton.Text =
+		"Air Spin: " .. (Settings.AirSpin and "ON" or "OFF")
+end)
+
+--==================================================
+-- AIR SPIN SPEED
+--==================================================
+
+local function CreateSlider(title, min, max, default, callback)
+
+	local container = Instance.new("Frame")
+	container.Size = UDim2.new(1, -10, 0, 65)
+	container.BackgroundColor3 = Color3.fromRGB(27, 27, 34)
+	container.BorderSizePixel = 0
+	container.Parent = Scrolling
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 9)
+	corner.Parent = container
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, -20, 0, 24)
+	label.Position = UDim2.new(0, 10, 0, 5)
+	label.BackgroundTransparency = 1
+	label.TextColor3 = Color3.new(1, 1, 1)
+	label.TextSize = 13
+	label.Font = Enum.Font.GothamSemibold
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Text = title .. ": " .. tostring(default)
+	label.Parent = container
+
+	local bar = Instance.new("Frame")
+	bar.Size = UDim2.new(1, -30, 0, 7)
+	bar.Position = UDim2.new(0, 15, 0, 43)
+	bar.BackgroundColor3 = Color3.fromRGB(55, 55, 65)
+	bar.BorderSizePixel = 0
+	bar.Parent = container
+
+	local barCorner = Instance.new("UICorner")
+	barCorner.CornerRadius = UDim.new(1, 0)
+	barCorner.Parent = bar
+
+	local fill = Instance.new("Frame")
+	fill.Size = UDim2.new(
+		(default - min) / (max - min),
+		0,
+		1,
+		0
+	)
+	fill.BackgroundColor3 = Settings.GuiColor
+	fill.BorderSizePixel = 0
+	fill.Parent = bar
+
+	local fillCorner = Instance.new("UICorner")
+	fillCorner.CornerRadius = UDim.new(1, 0)
+	fillCorner.Parent = fill
+
+	local knob = Instance.new("TextButton")
+	knob.Size = UDim2.new(0, 18, 0, 18)
+	knob.AnchorPoint = Vector2.new(0.5, 0.5)
+	knob.Position = UDim2.new(
+		(default - min) / (max - min),
+		0,
+		0.5,
+		0
+	)
+	knob.BackgroundColor3 = Color3.new(1, 1, 1)
+	knob.Text = ""
+	knob.BorderSizePixel = 0
+	knob.Parent = bar
+
+	local knobCorner = Instance.new("UICorner")
+	knobCorner.CornerRadius = UDim.new(1, 0)
+	knobCorner.Parent = knob
+
+	local sliding = false
+
+	local function SetValue(value)
+		value = math.clamp(value, min, max)
+
+		local percent = (value - min) / (max - min)
+
+		fill.Size = UDim2.new(percent, 0, 1, 0)
+		knob.Position = UDim2.new(percent, 0, 0.5, 0)
+
+		local rounded = math.floor(value * 10 + 0.5) / 10
+
+		label.Text = title .. ": " .. tostring(rounded)
+
+		callback(rounded)
+	end
+
+	local function Update(input)
+		local percent = math.clamp(
+			(input.Position.X - bar.AbsolutePosition.X)
+				/ bar.AbsoluteSize.X,
+			0,
+			1
+		)
+
+		SetValue(min + ((max - min) * percent))
+	end
+
+	bar.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			sliding = true
+			Update(input)
+		end
+	end)
+
+	knob.MouseButton1Down:Connect(function()
+		sliding = true
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if sliding and input.UserInputType == Enum.UserInputType.MouseMovement then
+			Update(input)
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			sliding = false
+		end
+	end)
+
+	return fill
+end
+
+CreateSlider(
+	"Air Spin Speed",
+	1,
+	25,
+	Settings.AirSpinSpeed,
+	function(value)
+		Settings.AirSpinSpeed = value
+	end
+)
+
+--==================================================
+-- PROXIMITY SPIN
+--==================================================
+
+CreateLabel("PROXIMITY SPIN")
+
+local ProximityButton = CreateButton("Proximity Spin: OFF")
+
+ProximityButton.MouseButton1Click:Connect(function()
+	Settings.ProximitySpin = not Settings.ProximitySpin
+
+	ProximityButton.Text =
+		"Proximity Spin: "
+		.. (Settings.ProximitySpin and "ON" or "OFF")
+end)
+
+CreateSlider(
+	"Detection Distance",
+	3,
+	30,
+	Settings.ProximityDistance,
+	function(value)
+		Settings.ProximityDistance = value
+	end
+)
+
+CreateSlider(
+	"Proximity Spin Speed",
+	1,
+	20,
+	Settings.ProximitySpinSpeed,
+	function(value)
+		Settings.ProximitySpinSpeed = value
+	end
+)
+
+--==================================================
+-- CHAMS
+--==================================================
+
+CreateLabel("PLAYER ESP")
+
+local ChamsButton = CreateButton("Player Chams: OFF")
+
+local HealthButton = CreateButton("Health Display: OFF")
+
+--==================================================
+-- CHAM / HEALTH SYSTEM
+--==================================================
+
+local Chams = {}
+local HealthDisplays = {}
+
+local function RemovePlayerVisuals(player)
+
+	if Chams[player] then
+		Chams[player]:Destroy()
+		Chams[player] = nil
+	end
+
+	if HealthDisplays[player] then
+		HealthDisplays[player]:Destroy()
+		HealthDisplays[player] = nil
+	end
+end
+
+local function CreateChams(player)
+
+	if player == LocalPlayer then
+		return
+	end
+
+	if not Settings.Chams then
+		return
+	end
+
+	local character = player.Character
+
+	if not character then
+		return
+	end
+
+	local highlight = Chams[player]
+
+	if not highlight then
+		highlight = Instance.new("Highlight")
+		highlight.Name = "FOVMB_Chams"
+		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		highlight.FillTransparency = 0.45
+		highlight.OutlineTransparency = 0
+		highlight.Parent = character
+
+		Chams[player] = highlight
+	else
+		highlight.Parent = character
+	end
+
+	highlight.FillColor = Settings.GuiColor
+	highlight.OutlineColor = Settings.GuiColor
+end
+
+local function CreateHealthDisplay(player)
+
+	if player == LocalPlayer then
+		return
+	end
+
+	if not Settings.Health then
+		return
+	end
+
+	local character = player.Character
+
+	if not character then
+		return
+	end
+
+	local head = character:FindFirstChild("Head")
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+
+	if not head or not humanoid then
+		return
+	end
+
+	if HealthDisplays[player] then
+		HealthDisplays[player].Parent = head
+		return
+	end
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "FOVMB_Health"
+	billboard.Size = UDim2.new(0, 120, 0, 35)
+	billboard.StudsOffset = Vector3.new(0, 3, 0)
+	billboard.AlwaysOnTop = true
+	billboard.Parent = head
+
+	local healthText = Instance.new("TextLabel")
+	healthText.Size = UDim2.new(1, 0, 1, 0)
+	healthText.BackgroundTransparency = 1
+	healthText.TextColor3 = Color3.fromRGB(255, 255, 255)
+	healthText.TextStrokeTransparency = 0
+	healthText.TextStrokeColor3 = Color3.new(0, 0, 0)
+	healthText.Font = Enum.Font.GothamBold
+	healthText.TextSize = 14
+	healthText.Parent = billboard
+
+	HealthDisplays[player] = billboard
+
+	local function UpdateHealth()
+
+		if not billboard.Parent then
+			return
+		end
+
+		local current = math.max(0, math.floor(humanoid.Health))
+		local maximum = math.max(1, math.floor(humanoid.MaxHealth))
+
+		healthText.Text =
+			player.DisplayName
+			.. "  |  "
+			.. current
+			.. "/"
+			.. maximum
+
+		if current / maximum > 0.6 then
+			healthText.TextColor3 =
+				Color3.fromRGB(90, 255, 110)
+		elseif current / maximum > 0.3 then
+			healthText.TextColor3 =
+				Color3.fromRGB(255, 210, 70)
+		else
+			healthText.TextColor3 =
+				Color3.fromRGB(255, 75, 75)
+		end
+	end
+
+	UpdateHealth()
+
+	humanoid.HealthChanged:Connect(UpdateHealth)
+end
+
+local function UpdateESP()
+
+	for _, player in ipairs(Players:GetPlayers()) do
+
+		if player ~= LocalPlayer then
+
+			if Settings.Chams then
+				CreateChams(player)
+			else
+				if Chams[player] then
+					Chams[player]:Destroy()
+					Chams[player] = nil
+				end
+			end
+
+			if Settings.Health then
+				CreateHealthDisplay(player)
+			else
+				if HealthDisplays[player] then
+					HealthDisplays[player]:Destroy()
+					HealthDisplays[player] = nil
+				end
+			end
+		end
+	end
+end
+
+ChamsButton.MouseButton1Click:Connect(function()
+
+	Settings.Chams = not Settings.Chams
+
+	ChamsButton.Text =
+		"Player Chams: "
+		.. (Settings.Chams and "ON" or "OFF")
+
+	UpdateESP()
+end)
+
+HealthButton.MouseButton1Click:Connect(function()
+
+	Settings.Health = not Settings.Health
+
+	HealthButton.Text =
+		"Health Display: "
+		.. (Settings.Health and "ON" or "OFF")
+
+	UpdateESP()
+end)
+
+Players.PlayerAdded:Connect(function(player)
+
+	player.CharacterAdded:Connect(function()
+		task.wait(0.5)
+		UpdateESP()
+	end)
+
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	RemovePlayerVisuals(player)
+end)
+
+--==================================================
+-- WALLHOP
+--==================================================
+
+CreateLabel("MOVEMENT")
+
+local WallhopButton = CreateButton("Wallhop: OFF")
+
+WallhopButton.MouseButton1Click:Connect(function()
+
+	Settings.Wallhop = not Settings.Wallhop
+
+	WallhopButton.Text =
+		"Wallhop: "
+		.. (Settings.Wallhop and "ON" or "OFF")
+end)
+
+CreateSlider(
+	"Wallhop Power",
+	10,
+	100,
+	Settings.WallhopPower,
+	function(value)
+		Settings.WallhopPower = value
+	end
+)
+
+local wallhopCooldown = false
+
+local function TryWallhop()
+
+	if not Settings.Wallhop then
+		return
+	end
+
+	if wallhopCooldown then
+		return
+	end
+
+	if not Character or not Humanoid or not RootPart then
+		return
+	end
+
+	local directions = {
+		RootPart.CFrame.RightVector,
+		-RootPart.CFrame.RightVector,
+		RootPart.CFrame.LookVector,
+		-RootPart.CFrame.LookVector,
+	}
+
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.FilterDescendantsInstances = {Character}
+
+	for _, direction in ipairs(directions) do
+
+		local result = workspace:Raycast(
+			RootPart.Position,
+			direction * 3,
+			rayParams
+		)
+
+		if result then
+
+			wallhopCooldown = true
+
+			Humanoid:ChangeState(
+				Enum.HumanoidStateType.Jumping
+			)
+
+			local velocity = RootPart.AssemblyLinearVelocity
+
+			RootPart.AssemblyLinearVelocity =
+				Vector3.new(
+					velocity.X,
+					Settings.WallhopPower,
+					velocity.Z
+				)
+
+			task.delay(0.18, function()
+				wallhopCooldown = false
+			end)
+
+			break
+		end
+	end
+end
+
+UserInputService.JumpRequest:Connect(function()
+
+	if Settings.Wallhop then
+		TryWallhop()
+	end
+end)
+
+--==================================================
+-- GUI COLOR
+--==================================================
+
+CreateLabel("GUI COLOR")
+
+local ColorFrame = Instance.new("Frame")
+ColorFrame.Size = UDim2.new(1, -10, 0, 115)
+ColorFrame.BackgroundColor3 = Color3.fromRGB(27, 27, 34)
+ColorFrame.BorderSizePixel = 0
+ColorFrame.Parent = Scrolling
+
+local ColorCorner = Instance.new("UICorner")
+ColorCorner.CornerRadius = UDim.new(0, 9)
+ColorCorner.Parent = ColorFrame
+
+local R = 120
+local G = 70
+local B = 255
+
+local function ColorSlider(name, y, value, callback)
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(0, 25, 0, 20)
+	label.Position = UDim2.new(0, 8, 0, y)
+	label.BackgroundTransparency = 1
+	label.Text = name
+	label.TextColor3 = Color3.new(1, 1, 1)
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 12
+	label.Parent = ColorFrame
+
+	local bar = Instance.new("Frame")
+	bar.Size = UDim2.new(1, -50, 0, 
