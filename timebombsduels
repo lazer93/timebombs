@@ -1,853 +1,390 @@
---// FOVMB SPIN CONTROL
---// LocalScript -> StarterPlayer > StarterPlayerScripts
+--=============================================================
+--  TAP x10  —  MOBILE / iPAD  —  TOUCH ONLY
+--  • only listens to real taps (Enum.UserInputType.Touch)
+--  • replays each tap using touch events (SendTouchEvent), NOT mouse clicks
+--  • small draggable ⚡ button, tap to open/close panel
+--  • smooth top-RIGHT notification (lowered) on toggle
+--=============================================================
 
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
+local Players      = game:GetService("Players")
+local UIS          = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local VIM          = game:GetService("VirtualInputManager")
 
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local player    = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
---==================================================
--- SETTINGS
---==================================================
+local MULTIPLIER  = 10        -- total taps per real tap
+local REPLAY_GAP  = 0.012     -- seconds between the extra taps
+local PRESS_GAP   = 0.006     -- Begin → End gap for each simulated tap
+local DEBOUNCE    = 0.05      -- ignore the same physical tap firing twice
 
-local Settings = {
-	AirSpin = false,
-	AirSpinSpeed = 8,
+local enabled = false
 
-	ProximitySpin = false,
-	ProximityDistance = 12,
-	ProximitySpinSpeed = 7,
+----------------------------------------------------------------
+-- ROOT GUI
+----------------------------------------------------------------
+local gui = Instance.new("ScreenGui")
+gui.Name            = "TapX10"
+gui.ResetOnSpawn    = false
+gui.IgnoreGuiInset  = true
+gui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
+gui.DisplayOrder    = 9999
+gui.Parent          = playerGui
 
-	Wallhop = false,
-	WallhopPower = 45,
+----------------------------------------------------------------
+-- NOTIFICATIONS (top-RIGHT, lowered)
+----------------------------------------------------------------
+local NOTIF_WIDTH  = 232
+local NOTIF_MARGIN = 14
+local NOTIF_TOP    = 90   -- ← "a lil lowered" (was 14)
 
-	Chams = false,
-	Health = false,
+local notifHolder = Instance.new("Frame")
+notifHolder.Name                   = "Notifications"
+notifHolder.AnchorPoint            = Vector2.new(1, 0)                        -- anchor to the right edge
+notifHolder.Position               = UDim2.new(1, -NOTIF_MARGIN, 0, NOTIF_TOP) -- top-right corner
+notifHolder.Size                   = UDim2.new(0, NOTIF_WIDTH, 0, 420)
+notifHolder.BackgroundTransparency = 1
+notifHolder.Parent                 = gui
 
-	GuiColor = Color3.fromRGB(120, 70, 255),
-}
+local notifLayout = Instance.new("UIListLayout")
+notifLayout.Padding = UDim.new(0, 8)
+notifLayout.Parent  = notifHolder
 
---==================================================
--- CHARACTER
---==================================================
+local notifOrder = 0
 
-local Character
-local Humanoid
-local RootPart
+local function notify(text, isOn)
+	notifOrder += 1
 
-local function SetupCharacter(char)
-	Character = char
-	Humanoid = char:WaitForChild("Humanoid")
-	RootPart = char:WaitForChild("HumanoidRootPart")
+	local slot = Instance.new("Frame")
+	slot.Size                   = UDim2.new(1, 0, 0, 42)
+	slot.BackgroundTransparency = 1
+	slot.LayoutOrder            = notifOrder
+	slot.Parent                 = notifHolder
+
+	local card = Instance.new("CanvasGroup")
+	card.Size                   = UDim2.new(1, 0, 1, 0)
+	card.Position               = UDim2.new(0, 260, 0, 0)   -- starts off-screen to the RIGHT
+	card.BackgroundColor3       = Color3.fromRGB(24, 24, 31)
+	card.BackgroundTransparency = 0.05
+	card.GroupTransparency      = 1
+	card.Parent                 = slot
+
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 12)
+	c.Parent = card
+
+	local s = Instance.new("UIStroke")
+	s.Color        = Color3.fromRGB(70, 70, 88)
+	s.Thickness    = 1
+	s.Transparency = 0.45
+	s.Parent       = card
+
+	local dot = Instance.new("Frame")
+	dot.Size             = UDim2.new(0, 8, 0, 8)
+	dot.Position         = UDim2.new(0, 14, 0.5, -4)
+	dot.BorderSizePixel  = 0
+	dot.BackgroundColor3 = isOn and Color3.fromRGB(0, 220, 130) or Color3.fromRGB(255, 90, 90)
+	dot.Parent           = card
+
+	local dc = Instance.new("UICorner")
+	dc.CornerRadius = UDim.new(1, 0)
+	dc.Parent = dot
+
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.Position              = UDim2.new(0, 32, 0, 0)
+	label.Size                  = UDim2.new(1, -44, 1, 0)
+	label.Font                  = Enum.Font.GothamMedium
+	label.TextSize              = 13
+	label.TextColor3            = Color3.fromRGB(240, 240, 246)
+	label.TextXAlignment        = Enum.TextXAlignment.Left
+	label.Text                  = text
+	label.Parent                = card
+
+	-- slide in from the right + fade in
+	TweenService:Create(card, TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+		Position          = UDim2.new(0, 0, 0, 0),
+		GroupTransparency = 0,
+	}):Play()
+
+	-- slide back out to the right + fade out
+	task.delay(2.2, function()
+		local out = TweenService:Create(card, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+			Position          = UDim2.new(0, 260, 0, 0),
+			GroupTransparency = 1,
+		})
+		out:Play()
+		out.Completed:Wait()
+		slot:Destroy()
+	end)
 end
 
-if LocalPlayer.Character then
-	SetupCharacter(LocalPlayer.Character)
-end
+----------------------------------------------------------------
+-- SMALL ⚡ BUTTON
+----------------------------------------------------------------
+local bubble = Instance.new("TextButton")
+bubble.Name             = "Bubble"
+bubble.Size             = UDim2.new(0, 46, 0, 46)
+bubble.Position         = UDim2.new(0, 16, 0, 220)
+bubble.BackgroundColor3 = Color3.fromRGB(26, 26, 34)
+bubble.AutoButtonColor  = false
+bubble.BorderSizePixel  = 0
+bubble.Text             = "⚡"
+bubble.Font             = Enum.Font.GothamBold
+bubble.TextSize         = 20
+bubble.TextColor3       = Color3.fromRGB(255, 255, 255)
+bubble.ZIndex           = 10
+bubble.Parent           = gui
 
-LocalPlayer.CharacterAdded:Connect(SetupCharacter)
+local bc = Instance.new("UICorner")
+bc.CornerRadius = UDim.new(1, 0)
+bc.Parent = bubble
 
---==================================================
--- GUI
---==================================================
+local bs = Instance.new("UIStroke")
+bs.Color        = Color3.fromRGB(90, 90, 110)
+bs.Thickness    = 1.5
+bs.Transparency = 0.5
+bs.Parent       = bubble
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "FOVMB_Control"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.IgnoreGuiInset = true
-ScreenGui.Parent = PlayerGui
+----------------------------------------------------------------
+-- PANEL
+----------------------------------------------------------------
+local panel = Instance.new("CanvasGroup")
+panel.Name                   = "Panel"
+panel.Size                   = UDim2.new(0, 190, 0, 80)
+panel.BackgroundColor3       = Color3.fromRGB(22, 22, 30)
+panel.BackgroundTransparency = 0.02
+panel.BorderSizePixel        = 0
+panel.GroupTransparency      = 1
+panel.Visible                = false
+panel.ZIndex                 = 9
+panel.Parent                 = gui
 
---==================================================
--- NOTIFICATION
---==================================================
+local pc = Instance.new("UICorner")
+pc.CornerRadius = UDim.new(0, 14)
+pc.Parent = panel
 
-local Notification = Instance.new("Frame")
-Notification.Name = "Notification"
-Notification.Size = UDim2.new(0, 285, 0, 65)
-Notification.Position = UDim2.new(1, 310, 1, -85)
-Notification.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
-Notification.BorderSizePixel = 0
-Notification.Parent = ScreenGui
+local ps = Instance.new("UIStroke")
+ps.Color        = Color3.fromRGB(65, 65, 82)
+ps.Thickness    = 1
+ps.Transparency = 0.4
+ps.Parent       = panel
 
-local NotificationCorner = Instance.new("UICorner")
-NotificationCorner.CornerRadius = UDim.new(0, 12)
-NotificationCorner.Parent = Notification
+local pscale = Instance.new("UIScale")
+pscale.Scale = 0.9
+pscale.Parent = panel
 
-local NotificationStroke = Instance.new("UIStroke")
-NotificationStroke.Thickness = 2
-NotificationStroke.Color = Settings.GuiColor
-NotificationStroke.Parent = Notification
+local blocker = Instance.new("TextButton")
+blocker.Size                   = UDim2.new(1, 0, 1, 0)
+blocker.BackgroundTransparency = 1
+blocker.Text                   = ""
+blocker.AutoButtonColor        = false
+blocker.ZIndex                 = 10
+blocker.Parent                 = panel
 
-local NotificationTitle = Instance.new("TextLabel")
-NotificationTitle.Size = UDim2.new(1, -20, 0, 28)
-NotificationTitle.Position = UDim2.new(0, 10, 0, 7)
-NotificationTitle.BackgroundTransparency = 1
-NotificationTitle.Text = "FOVMB"
-NotificationTitle.TextColor3 = Color3.new(1, 1, 1)
-NotificationTitle.Font = Enum.Font.GothamBold
-NotificationTitle.TextSize = 17
-NotificationTitle.TextXAlignment = Enum.TextXAlignment.Left
-NotificationTitle.Parent = Notification
+local title = Instance.new("TextLabel")
+title.Position              = UDim2.new(0, 14, 0, 14)
+title.Size                  = UDim2.new(1, -90, 0, 18)
+title.BackgroundTransparency = 1
+title.Font                  = Enum.Font.GothamBold
+title.TextSize              = 14
+title.TextColor3            = Color3.fromRGB(240, 240, 246)
+title.TextXAlignment        = Enum.TextXAlignment.Left
+title.Text                  = "Tap Speed"
+title.ZIndex                = 11
+title.Parent                = panel
 
-local NotificationText = Instance.new("TextLabel")
-NotificationText.Size = UDim2.new(1, -20, 0, 22)
-NotificationText.Position = UDim2.new(0, 10, 0, 34)
-NotificationText.BackgroundTransparency = 1
-NotificationText.Text = "Made by fovmb on Discord"
-NotificationText.TextColor3 = Color3.fromRGB(185, 185, 195)
-NotificationText.Font = Enum.Font.Gotham
-NotificationText.TextSize = 13
-NotificationText.TextXAlignment = Enum.TextXAlignment.Left
-NotificationText.Parent = Notification
+local sub = Instance.new("TextLabel")
+sub.Position              = UDim2.new(0, 14, 0, 34)
+sub.Size                  = UDim2.new(1, -90, 0, 14)
+sub.BackgroundTransparency = 1
+sub.Font                  = Enum.Font.Gotham
+sub.TextSize              = 11
+sub.TextColor3            = Color3.fromRGB(150, 150, 168)
+sub.TextXAlignment        = Enum.TextXAlignment.Left
+sub.Text                  = "x" .. MULTIPLIER .. " per tap"
+sub.ZIndex                = 11
+sub.Parent                = panel
 
--- Show notification
-task.spawn(function()
-	task.wait(0.5)
+local track = Instance.new("TextButton")
+track.Size             = UDim2.new(0, 52, 0, 28)
+track.Position         = UDim2.new(1, -66, 0.5, -14)
+track.BackgroundColor3 = Color3.fromRGB(58, 58, 72)
+track.AutoButtonColor  = false
+track.BorderSizePixel  = 0
+track.Text             = ""
+track.ZIndex           = 11
+track.Parent           = panel
 
-	local showTween = TweenService:Create(
-		Notification,
-		TweenInfo.new(
-			0.55,
-			Enum.EasingStyle.Quint,
-			Enum.EasingDirection.Out
-		),
-		{
-			Position = UDim2.new(1, -20, 1, -85)
-		}
-	)
+local tc = Instance.new("UICorner")
+tc.CornerRadius = UDim.new(1, 0)
+tc.Parent = track
 
-	showTween:Play()
-	showTween.Completed:Wait()
+local knob = Instance.new("Frame")
+knob.Size             = UDim2.new(0, 22, 0, 22)
+knob.Position         = UDim2.new(0, 3, 0.5, -11)
+knob.BackgroundColor3 = Color3.fromRGB(235, 235, 240)
+knob.BorderSizePixel  = 0
+knob.ZIndex           = 12
+knob.Parent           = track
 
-	task.wait(3)
+local kc = Instance.new("UICorner")
+kc.CornerRadius = UDim.new(1, 0)
+kc.Parent = knob
 
-	local hideTween = TweenService:Create(
-		Notification,
-		TweenInfo.new(
-			0.45,
-			Enum.EasingStyle.Quint,
-			Enum.EasingDirection.In
-		),
-		{
-			Position = UDim2.new(1, 310, 1, -85)
-		}
-	)
-
-	hideTween:Play()
-end)
-
---==================================================
--- MAIN GUI
---==================================================
-
-local Main = Instance.new("Frame")
-Main.Name = "Main"
-Main.Size = UDim2.new(0, 340, 0, 465)
-Main.Position = UDim2.new(0.5, -170, 0.5, -232)
-Main.BackgroundColor3 = Color3.fromRGB(18, 18, 23)
-Main.BorderSizePixel = 0
-Main.Parent = ScreenGui
-
-local MainCorner = Instance.new("UICorner")
-MainCorner.CornerRadius = UDim.new(0, 14)
-MainCorner.Parent = Main
-
-local MainStroke = Instance.new("UIStroke")
-MainStroke.Color = Settings.GuiColor
-MainStroke.Thickness = 2
-MainStroke.Parent = Main
-
---==================================================
--- HEADER
---==================================================
-
-local Header = Instance.new("Frame")
-Header.Size = UDim2.new(1, 0, 0, 58)
-Header.BackgroundColor3 = Settings.GuiColor
-Header.BorderSizePixel = 0
-Header.Parent = Main
-
-local HeaderCorner = Instance.new("UICorner")
-HeaderCorner.CornerRadius = UDim.new(0, 14)
-HeaderCorner.Parent = Header
-
-local HeaderCover = Instance.new("Frame")
-HeaderCover.Size = UDim2.new(1, 0, 0, 15)
-HeaderCover.Position = UDim2.new(0, 0, 1, -15)
-HeaderCover.BackgroundColor3 = Settings.GuiColor
-HeaderCover.BorderSizePixel = 0
-HeaderCover.Parent = Header
-
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, -65, 1, 0)
-Title.Position = UDim2.new(0, 16, 0, 0)
-Title.BackgroundTransparency = 1
-Title.Text = "FOVMB â€¢ SPIN CONTROL"
-Title.TextColor3 = Color3.new(1, 1, 1)
-Title.TextSize = 19
-Title.Font = Enum.Font.GothamBold
-Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Parent = Header
-
-local CloseButton = Instance.new("TextButton")
-CloseButton.Size = UDim2.new(0, 40, 0, 40)
-CloseButton.Position = UDim2.new(1, -48, 0, 9)
-CloseButton.BackgroundColor3 = Color3.fromRGB(235, 65, 65)
-CloseButton.Text = "Ã—"
-CloseButton.TextColor3 = Color3.new(1, 1, 1)
-CloseButton.TextSize = 25
-CloseButton.Font = Enum.Font.GothamBold
-CloseButton.BorderSizePixel = 0
-CloseButton.Parent = Header
-
-local CloseCorner = Instance.new("UICorner")
-CloseCorner.CornerRadius = UDim.new(0, 9)
-CloseCorner.Parent = CloseButton
-
---==================================================
--- OPEN BUTTON
---==================================================
-
-local OpenButton = Instance.new("TextButton")
-OpenButton.Size = UDim2.new(0, 50, 0, 50)
-OpenButton.Position = UDim2.new(0, 12, 0, 12)
-OpenButton.BackgroundColor3 = Settings.GuiColor
-OpenButton.Text = "â˜°"
-OpenButton.TextColor3 = Color3.new(1, 1, 1)
-OpenButton.TextSize = 23
-OpenButton.Font = Enum.Font.GothamBold
-OpenButton.BorderSizePixel = 0
-OpenButton.Visible = false
-OpenButton.Parent = ScreenGui
-
-local OpenCorner = Instance.new("UICorner")
-OpenCorner.CornerRadius = UDim.new(0, 11)
-OpenCorner.Parent = OpenButton
-
---==================================================
--- DRAGGING
---==================================================
-
-local dragging = false
-local dragStart
-local startPosition
-
-Header.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1
-		or input.UserInputType == Enum.UserInputType.Touch then
-
-		dragging = true
-		dragStart = input.Position
-		startPosition = Main.Position
-	end
-end)
-
-Header.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1
-		or input.UserInputType == Enum.UserInputType.Touch then
-
-		dragging = false
-	end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-	if not dragging then
-		return
-	end
-
-	if input.UserInputType == Enum.UserInputType.MouseMovement
-		or input.UserInputType == Enum.UserInputType.Touch then
-
-		local delta = input.Position - dragStart
-
-		Main.Position = UDim2.new(
-			startPosition.X.Scale,
-			startPosition.X.Offset + delta.X,
-			startPosition.Y.Scale,
-			startPosition.Y.Offset + delta.Y
-		)
-	end
-end)
-
---==================================================
--- SCROLLING
---==================================================
-
-local Scrolling = Instance.new("ScrollingFrame")
-Scrolling.Size = UDim2.new(1, -20, 1, -70)
-Scrolling.Position = UDim2.new(0, 10, 0, 63)
-Scrolling.BackgroundTransparency = 1
-Scrolling.BorderSizePixel = 0
-Scrolling.ScrollBarThickness = 4
-Scrolling.ScrollBarImageColor3 = Settings.GuiColor
-Scrolling.CanvasSize = UDim2.new(0, 0, 0, 850)
-Scrolling.Parent = Main
-
-local Layout = Instance.new("UIListLayout")
-Layout.Padding = UDim.new(0, 8)
-Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-Layout.Parent = Scrolling
-
---==================================================
+----------------------------------------------------------------
 -- HELPERS
---==================================================
+----------------------------------------------------------------
+local function syncPanel()
+	panel.Position = UDim2.new(
+		bubble.Position.X.Scale, bubble.Position.X.Offset,
+		bubble.Position.Y.Scale, bubble.Position.Y.Offset + 54
+	)
+end
+syncPanel()
 
-local function CreateLabel(text)
-	local label = Instance.new("TextLabel")
+local function setEnabled(state)
+	enabled = state
 
-	label.Size = UDim2.new(1, -10, 0, 28)
-	label.BackgroundTransparency = 1
-	label.Text = text
-	label.TextColor3 = Color3.fromRGB(190, 190, 200)
-	label.TextSize = 13
-	label.Font = Enum.Font.GothamBold
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.Parent = Scrolling
+	local info = TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 
-	return label
+	TweenService:Create(track, info, {
+		BackgroundColor3 = state and Color3.fromRGB(0, 200, 120) or Color3.fromRGB(58, 58, 72),
+	}):Play()
+
+	TweenService:Create(knob, info, {
+		Position = state and UDim2.new(0, 27, 0.5, -11) or UDim2.new(0, 3, 0.5, -11),
+	}):Play()
+
+	bubble.TextColor3 = state and Color3.fromRGB(120, 255, 190) or Color3.fromRGB(255, 255, 255)
+
+	notify(state and "Tap Speed x" .. MULTIPLIER .. " — ON"
+	            or "Tap Speed x" .. MULTIPLIER .. " — OFF", state)
 end
 
-local function CreateButton(text)
-	local button = Instance.new("TextButton")
-
-	button.Size = UDim2.new(1, -10, 0, 44)
-	button.BackgroundColor3 = Color3.fromRGB(32, 32, 40)
-	button.Text = text
-	button.TextColor3 = Color3.new(1, 1, 1)
-	button.TextSize = 14
-	button.Font = Enum.Font.GothamSemibold
-	button.BorderSizePixel = 0
-	button.Parent = Scrolling
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 9)
-	corner.Parent = button
-
-	return button
-end
-
---==================================================
--- AIR SPIN
---==================================================
-
-CreateLabel("AIR SPIN")
-
-local AirSpinButton = CreateButton("Air Spin: OFF")
-
-AirSpinButton.MouseButton1Click:Connect(function()
-	Settings.AirSpin = not Settings.AirSpin
-
-	AirSpinButton.Text =
-		"Air Spin: " .. (Settings.AirSpin and "ON" or "OFF")
+track.Activated:Connect(function()
+	setEnabled(not enabled)
 end)
 
---==================================================
--- AIR SPIN SPEED
---==================================================
+----------------------------------------------------------------
+-- OPEN / CLOSE PANEL
+----------------------------------------------------------------
+local panelOpen = false
 
-local function CreateSlider(title, min, max, default, callback)
+local function setPanel(open)
+	panelOpen = open
+	syncPanel()
 
-	local container = Instance.new("Frame")
-	container.Size = UDim2.new(1, -10, 0, 65)
-	container.BackgroundColor3 = Color3.fromRGB(27, 27, 34)
-	container.BorderSizePixel = 0
-	container.Parent = Scrolling
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 9)
-	corner.Parent = container
-
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, -20, 0, 24)
-	label.Position = UDim2.new(0, 10, 0, 5)
-	label.BackgroundTransparency = 1
-	label.TextColor3 = Color3.new(1, 1, 1)
-	label.TextSize = 13
-	label.Font = Enum.Font.GothamSemibold
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.Text = title .. ": " .. tostring(default)
-	label.Parent = container
-
-	local bar = Instance.new("Frame")
-	bar.Size = UDim2.new(1, -30, 0, 7)
-	bar.Position = UDim2.new(0, 15, 0, 43)
-	bar.BackgroundColor3 = Color3.fromRGB(55, 55, 65)
-	bar.BorderSizePixel = 0
-	bar.Parent = container
-
-	local barCorner = Instance.new("UICorner")
-	barCorner.CornerRadius = UDim.new(1, 0)
-	barCorner.Parent = bar
-
-	local fill = Instance.new("Frame")
-	fill.Size = UDim2.new(
-		(default - min) / (max - min),
-		0,
-		1,
-		0
-	)
-	fill.BackgroundColor3 = Settings.GuiColor
-	fill.BorderSizePixel = 0
-	fill.Parent = bar
-
-	local fillCorner = Instance.new("UICorner")
-	fillCorner.CornerRadius = UDim.new(1, 0)
-	fillCorner.Parent = fill
-
-	local knob = Instance.new("TextButton")
-	knob.Size = UDim2.new(0, 18, 0, 18)
-	knob.AnchorPoint = Vector2.new(0.5, 0.5)
-	knob.Position = UDim2.new(
-		(default - min) / (max - min),
-		0,
-		0.5,
-		0
-	)
-	knob.BackgroundColor3 = Color3.new(1, 1, 1)
-	knob.Text = ""
-	knob.BorderSizePixel = 0
-	knob.Parent = bar
-
-	local knobCorner = Instance.new("UICorner")
-	knobCorner.CornerRadius = UDim.new(1, 0)
-	knobCorner.Parent = knob
-
-	local sliding = false
-
-	local function SetValue(value)
-		value = math.clamp(value, min, max)
-
-		local percent = (value - min) / (max - min)
-
-		fill.Size = UDim2.new(percent, 0, 1, 0)
-		knob.Position = UDim2.new(percent, 0, 0.5, 0)
-
-		local rounded = math.floor(value * 10 + 0.5) / 10
-
-		label.Text = title .. ": " .. tostring(rounded)
-
-		callback(rounded)
-	end
-
-	local function Update(input)
-		local percent = math.clamp(
-			(input.Position.X - bar.AbsolutePosition.X)
-				/ bar.AbsoluteSize.X,
-			0,
-			1
-		)
-
-		SetValue(min + ((max - min) * percent))
-	end
-
-	bar.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			sliding = true
-			Update(input)
-		end
-	end)
-
-	knob.MouseButton1Down:Connect(function()
-		sliding = true
-	end)
-
-	UserInputService.InputChanged:Connect(function(input)
-		if sliding and input.UserInputType == Enum.UserInputType.MouseMovement then
-			Update(input)
-		end
-	end)
-
-	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			sliding = false
-		end
-	end)
-
-	return fill
-end
-
-CreateSlider(
-	"Air Spin Speed",
-	1,
-	25,
-	Settings.AirSpinSpeed,
-	function(value)
-		Settings.AirSpinSpeed = value
-	end
-)
-
---==================================================
--- PROXIMITY SPIN
---==================================================
-
-CreateLabel("PROXIMITY SPIN")
-
-local ProximityButton = CreateButton("Proximity Spin: OFF")
-
-ProximityButton.MouseButton1Click:Connect(function()
-	Settings.ProximitySpin = not Settings.ProximitySpin
-
-	ProximityButton.Text =
-		"Proximity Spin: "
-		.. (Settings.ProximitySpin and "ON" or "OFF")
-end)
-
-CreateSlider(
-	"Detection Distance",
-	3,
-	30,
-	Settings.ProximityDistance,
-	function(value)
-		Settings.ProximityDistance = value
-	end
-)
-
-CreateSlider(
-	"Proximity Spin Speed",
-	1,
-	20,
-	Settings.ProximitySpinSpeed,
-	function(value)
-		Settings.ProximitySpinSpeed = value
-	end
-)
-
---==================================================
--- CHAMS
---==================================================
-
-CreateLabel("PLAYER ESP")
-
-local ChamsButton = CreateButton("Player Chams: OFF")
-
-local HealthButton = CreateButton("Health Display: OFF")
-
---==================================================
--- CHAM / HEALTH SYSTEM
---==================================================
-
-local Chams = {}
-local HealthDisplays = {}
-
-local function RemovePlayerVisuals(player)
-
-	if Chams[player] then
-		Chams[player]:Destroy()
-		Chams[player] = nil
-	end
-
-	if HealthDisplays[player] then
-		HealthDisplays[player]:Destroy()
-		HealthDisplays[player] = nil
-	end
-end
-
-local function CreateChams(player)
-
-	if player == LocalPlayer then
-		return
-	end
-
-	if not Settings.Chams then
-		return
-	end
-
-	local character = player.Character
-
-	if not character then
-		return
-	end
-
-	local highlight = Chams[player]
-
-	if not highlight then
-		highlight = Instance.new("Highlight")
-		highlight.Name = "FOVMB_Chams"
-		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-		highlight.FillTransparency = 0.45
-		highlight.OutlineTransparency = 0
-		highlight.Parent = character
-
-		Chams[player] = highlight
+	if open then
+		panel.Visible = true
+		TweenService:Create(panel, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+			GroupTransparency = 0,
+		}):Play()
+		TweenService:Create(pscale, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Scale = 1,
+		}):Play()
 	else
-		highlight.Parent = character
-	end
-
-	highlight.FillColor = Settings.GuiColor
-	highlight.OutlineColor = Settings.GuiColor
-end
-
-local function CreateHealthDisplay(player)
-
-	if player == LocalPlayer then
-		return
-	end
-
-	if not Settings.Health then
-		return
-	end
-
-	local character = player.Character
-
-	if not character then
-		return
-	end
-
-	local head = character:FindFirstChild("Head")
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-
-	if not head or not humanoid then
-		return
-	end
-
-	if HealthDisplays[player] then
-		HealthDisplays[player].Parent = head
-		return
-	end
-
-	local billboard = Instance.new("BillboardGui")
-	billboard.Name = "FOVMB_Health"
-	billboard.Size = UDim2.new(0, 120, 0, 35)
-	billboard.StudsOffset = Vector3.new(0, 3, 0)
-	billboard.AlwaysOnTop = true
-	billboard.Parent = head
-
-	local healthText = Instance.new("TextLabel")
-	healthText.Size = UDim2.new(1, 0, 1, 0)
-	healthText.BackgroundTransparency = 1
-	healthText.TextColor3 = Color3.fromRGB(255, 255, 255)
-	healthText.TextStrokeTransparency = 0
-	healthText.TextStrokeColor3 = Color3.new(0, 0, 0)
-	healthText.Font = Enum.Font.GothamBold
-	healthText.TextSize = 14
-	healthText.Parent = billboard
-
-	HealthDisplays[player] = billboard
-
-	local function UpdateHealth()
-
-		if not billboard.Parent then
-			return
-		end
-
-		local current = math.max(0, math.floor(humanoid.Health))
-		local maximum = math.max(1, math.floor(humanoid.MaxHealth))
-
-		healthText.Text =
-			player.DisplayName
-			.. "  |  "
-			.. current
-			.. "/"
-			.. maximum
-
-		if current / maximum > 0.6 then
-			healthText.TextColor3 =
-				Color3.fromRGB(90, 255, 110)
-		elseif current / maximum > 0.3 then
-			healthText.TextColor3 =
-				Color3.fromRGB(255, 210, 70)
-		else
-			healthText.TextColor3 =
-				Color3.fromRGB(255, 75, 75)
-		end
-	end
-
-	UpdateHealth()
-
-	humanoid.HealthChanged:Connect(UpdateHealth)
-end
-
-local function UpdateESP()
-
-	for _, player in ipairs(Players:GetPlayers()) do
-
-		if player ~= LocalPlayer then
-
-			if Settings.Chams then
-				CreateChams(player)
-			else
-				if Chams[player] then
-					Chams[player]:Destroy()
-					Chams[player] = nil
-				end
-			end
-
-			if Settings.Health then
-				CreateHealthDisplay(player)
-			else
-				if HealthDisplays[player] then
-					HealthDisplays[player]:Destroy()
-					HealthDisplays[player] = nil
-				end
-			end
-		end
+		TweenService:Create(panel, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+			GroupTransparency = 1,
+		}):Play()
+		TweenService:Create(pscale, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+			Scale = 0.9,
+		}):Play()
+		task.delay(0.2, function()
+			if not panelOpen then panel.Visible = false end
+		end)
 	end
 end
 
-ChamsButton.MouseButton1Click:Connect(function()
+----------------------------------------------------------------
+-- DRAG + TAP ON THE ⚡ BUTTON  (touch only)
+----------------------------------------------------------------
+local dragging  = false
+local dragged   = false
+local dragStart = nil
+local startPos  = nil
+local activeTouch = nil
 
-	Settings.Chams = not Settings.Chams
-
-	ChamsButton.Text =
-		"Player Chams: "
-		.. (Settings.Chams and "ON" or "OFF")
-
-	UpdateESP()
+bubble.InputBegan:Connect(function(input)
+	if input.UserInputType ~= Enum.UserInputType.Touch then return end
+	dragging     = true
+	dragged      = false
+	dragStart    = input.Position
+	startPos     = bubble.Position
+	activeTouch  = input
 end)
 
-HealthButton.MouseButton1Click:Connect(function()
+UIS.InputChanged:Connect(function(input)
+	if not dragging then return end
+	if input.UserInputType ~= Enum.UserInputType.Touch then return end
+	if activeTouch and input ~= activeTouch then return end
 
-	Settings.Health = not Settings.Health
-
-	HealthButton.Text =
-		"Health Display: "
-		.. (Settings.Health and "ON" or "OFF")
-
-	UpdateESP()
-end)
-
-Players.PlayerAdded:Connect(function(player)
-
-	player.CharacterAdded:Connect(function()
-		task.wait(0.5)
-		UpdateESP()
-	end)
-
-end)
-
-Players.PlayerRemoving:Connect(function(player)
-	RemovePlayerVisuals(player)
-end)
-
---==================================================
--- WALLHOP
---==================================================
-
-CreateLabel("MOVEMENT")
-
-local WallhopButton = CreateButton("Wallhop: OFF")
-
-WallhopButton.MouseButton1Click:Connect(function()
-
-	Settings.Wallhop = not Settings.Wallhop
-
-	WallhopButton.Text =
-		"Wallhop: "
-		.. (Settings.Wallhop and "ON" or "OFF")
-end)
-
-CreateSlider(
-	"Wallhop Power",
-	10,
-	100,
-	Settings.WallhopPower,
-	function(value)
-		Settings.WallhopPower = value
+	local delta = input.Position - dragStart
+	if not dragged and delta.Magnitude > 8 then
+		dragged = true
 	end
-)
-
-local wallhopCooldown = false
-
-local function TryWallhop()
-
-	if not Settings.Wallhop then
-		return
-	end
-
-	if wallhopCooldown then
-		return
-	end
-
-	if not Character or not Humanoid or not RootPart then
-		return
-	end
-
-	local directions = {
-		RootPart.CFrame.RightVector,
-		-RootPart.CFrame.RightVector,
-		RootPart.CFrame.LookVector,
-		-RootPart.CFrame.LookVector,
-	}
-
-	local rayParams = RaycastParams.new()
-	rayParams.FilterType = Enum.RaycastFilterType.Exclude
-	rayParams.FilterDescendantsInstances = {Character}
-
-	for _, direction in ipairs(directions) do
-
-		local result = workspace:Raycast(
-			RootPart.Position,
-			direction * 3,
-			rayParams
+	if dragged then
+		bubble.Position = UDim2.new(
+			startPos.X.Scale, startPos.X.Offset + delta.X,
+			startPos.Y.Scale, startPos.Y.Offset + delta.Y
 		)
-
-		if result then
-
-			wallhopCooldown = true
-
-			Humanoid:ChangeState(
-				Enum.HumanoidStateType.Jumping
-			)
-
-			local velocity = RootPart.AssemblyLinearVelocity
-
-			RootPart.AssemblyLinearVelocity =
-				Vector3.new(
-					velocity.X,
-					Settings.WallhopPower,
-					velocity.Z
-				)
-
-			task.delay(0.18, function()
-				wallhopCooldown = false
-			end)
-
-			break
-		end
-	end
-end
-
-UserInputService.JumpRequest:Connect(function()
-
-	if Settings.Wallhop then
-		TryWallhop()
+		syncPanel()
 	end
 end)
 
---==================================================
--- GUI COLOR
---==================================================
+UIS.InputEnded:Connect(function(input)
+	if not dragging then return end
+	if input.UserInputType ~= Enum.UserInputType.Touch then return end
+	if activeTouch and input ~= activeTouch then return end
 
-CreateLabel("GUI COLOR")
+	dragging    = false
+	activeTouch = nil
+	if not dragged then
+		setPanel(not panelOpen)
+	end
+end)
 
-local ColorFrame = Instance.new("Frame")
-ColorFrame.Size = UDim2.new(1, -10, 0, 115)
-ColorFrame.BackgroundColor3 = Color3.fromRGB(27, 27, 34)
-ColorFrame.BorderSizePixel = 0
-ColorFrame.Parent = Scrolling
+----------------------------------------------------------------
+-- TOUCH-ONLY 10x REPLAY
+----------------------------------------------------------------
+local function sendTouchTap(x, y)
+	pcall(function()
+		VIM:SendTouchEvent(x, y, Enum.UserInputState.Begin, false, game)
+		task.wait(PRESS_GAP)
+		VIM:SendTouchEvent(x, y, Enum.UserInputState.End, false, game)
+	end)
+end
 
-local ColorCorner = Instance.new("UICorner")
-ColorCorner.CornerRadius = UDim.new(0, 9)
-ColorCorner.Parent = ColorFrame
+local function pointInside(obj, x, y)
+	if not obj.Visible then return false end
+	local p, s = obj.AbsolutePosition, obj.AbsoluteSize
+	return x >= p.X and x <= p.X + s.X and y >= p.Y and y <= p.Y + s.Y
+end
 
-local R = 120
-local G = 70
-local B = 255
+local lastTap = 0
 
-local function ColorSlider(name, y, value, callback)
+UIS.InputBegan:Connect(function(input, gameProcessed)
+	if not enabled then return end
+	if input.UserInputType ~= Enum.UserInputType.Touch then return end
+	if gameProcessed then return end
 
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(0, 25, 0, 20)
-	label.Position = UDim2.new(0, 8, 0, y)
-	label.BackgroundTransparency = 1
-	label.Text = name
-	label.TextColor3 = Color3.new(1, 1, 1)
-	label.Font = Enum.Font.GothamBold
-	label.TextSize = 12
-	label.Parent = ColorFrame
+	local now = os.clock()
+	if now - lastTap < DEBOUNCE then return end
+	lastTap = now
 
-	local bar = Instance.new("Frame")
-	bar.Size = UDim2.new(1, -50, 0, 
+	local x, y = input.Position.X, input.Position.Y
+
+	if pointInside(bubble, x, y) then return end
+	if panelOpen and pointInside(panel, x, y) then return end
+
+	task.spawn(function()
+		for i = 2, MULTIPLIER do
+			if not enabled then break end
+			sendTouchTap(x, y)
+			task.wait(REPLAY_GAP)
+		end
+	end)
+end)
+
+notify("Tap Speed loaded — tap ⚡", true)
